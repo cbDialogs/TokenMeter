@@ -20,4 +20,6 @@ xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
 
 spctl --assess --type open --context context:primary-signature --verbose "$DMG"
-echo "Notarized $DMG"
+mkdir -p dist
+cp "$DMG" dist/TokenMeter.dmg
+echo "Notarized $DMG (copied to dist/)"
