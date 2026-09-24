@@ -1,8 +1,10 @@
+<p align="center"><img src="docs/icon.png" width="128" alt="TokenMeter icon"></p>
+
 # TokenMeter
 
 A small native macOS app that shows your Claude Code usage as an analog speedometer, so you can tell at a glance whether you're ahead of or behind pace for the week.
 
-![Gauge: red needle for actual usage, triangle for expected pace, sub-dial for session](docs/screenshot.png)
+<p align="center"><img src="docs/screenshot.png" width="340" alt="TokenMeter window: red needle for actual Fable usage at 55%, triangle marker for expected pace at 60%, session sub-dial below"></p>
 
 ## What it shows
 
@@ -46,9 +48,9 @@ This endpoint isn't a documented public API and may change. Missing values show 
 
 ## Install
 
-Download `TokenMeter.dmg`, open it, and drag **TokenMeter** into **Applications**.
+Download **TokenMeter.dmg** from the [latest release](../../releases/latest), open it, and drag **TokenMeter** into **Applications**.
 
-The build is ad-hoc signed, not notarized. The first time you open it, right-click the app and choose **Open**, or allow it under **System Settings → Privacy & Security**.
+The app is signed with a Developer ID and notarized by Apple, so it opens without Gatekeeper warnings. It's a universal build (Apple silicon and Intel).
 
 ## Build from source
 
@@ -56,8 +58,12 @@ The build is ad-hoc signed, not notarized. The first time you open it, right-cli
 swift test                 # run the unit tests
 swift run                  # run in development
 ./scripts/build-app.sh     # → build/TokenMeter.app
-./scripts/make-dmg.sh      # → build/TokenMeter.dmg
+./scripts/make-dmg.sh      # → build/TokenMeter.dmg (ad-hoc signed)
+./scripts/notarize.sh      # → signed, notarized, stapled build/TokenMeter.dmg
+swift scripts/make-icon.swift   # regenerate Resources/AppIcon.icns
 ```
+
+`notarize.sh` needs a Developer ID Application certificate and a saved `notarytool` profile. Set `SIGN_IDENTITY` and `NOTARY_PROFILE` to use your own.
 
 `open Package.swift` opens the project in Xcode.
 
@@ -72,5 +78,6 @@ Sources/TokenMeter/
   UsageModels.swift      lenient decoding of the usage response
   PaceCalculator.swift   work-hours pace math
 Tests/TokenMeterTests/   pace and decoding tests
-scripts/                 .app and .dmg packaging
+Resources/                Info.plist, AppIcon.icns
+scripts/                 icon, .app, .dmg and notarization scripts
 ```
