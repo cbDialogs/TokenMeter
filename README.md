@@ -36,7 +36,11 @@ TokenMeter reuses the login that Claude Code already stores:
 2. It calls `GET https://api.anthropic.com/api/oauth/usage`, the same endpoint behind `/usage` in Claude Code.
 3. It polls every 2 minutes. Press **⌘R** or double-click the window to refresh now.
 
-The token is only sent to `api.anthropic.com`. TokenMeter **never refreshes the token itself**, because that would rotate Claude Code's refresh token and could break Claude Code's login. If the token expires, the window says *"Token expired — run `claude` to refresh"*. Run any Claude Code command and the meter recovers on its next poll.
+The token is only sent to `api.anthropic.com`. TokenMeter **never refreshes the token itself**, because that would rotate Claude Code's refresh token and could break Claude Code's login. Claude Code's login lasts about 8 hours without use. When it expires, the needles dim and the window says *"Stale since 5:12 PM — open any `claude` session to refresh"*. Start Claude Code and the meter recovers on its next poll.
+
+If Anthropic rate-limits the endpoint, TokenMeter waits as long as the server asks (up to 30 minutes) before trying again. Failed requests are recorded in `~/Library/Logs/TokenMeter.log`, without the token.
+
+> Long-lived tokens from `claude setup-token` don't work here: they lack the `user:profile` scope the usage endpoint requires.
 
 This endpoint isn't a documented public API and may change. Missing values show as `--` and don't crash the app.
 

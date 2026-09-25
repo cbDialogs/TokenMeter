@@ -35,3 +35,47 @@ struct UsageModelsTests {
         #expect(usage.session == nil)
     }
 }
+
+struct RetryAfterTests {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+
+    @Test func parsesSeconds() {
+        #expect(UsageService.retryAfter("120", now: now) == now.addingTimeInterval(120))
+    }
+
+    @Test func parsesHTTPDate() {
+        #expect(UsageService.retryAfter("Fri, 25 Sep 2026 13:00:00 GMT") == Date(timeIntervalSince1970: 1790341200))
+    }
+
+    @Test func ignoresMissing() {
+        #expect(UsageService.retryAfter(nil) == nil)
+        #expect(UsageService.retryAfter("soon") == nil)
+    }
+}
+
+struct StaleMessageTests {
+    let calendar: Calendar = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Chicago")!
+        return cal
+    }()
+
+    @Test func noPreviousData() {
+        #expect(UsageService.staleMessage(since: nil) == "Claude Code login expired — open any `claude` session to refresh")
+    }
+
+    @Test func sameDayShowsTimeOnly() {
+        let last = calendar.date(from: DateComponents(year: 2026, month: 9, day: 25, hour: 7, minute: 5))!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 25, hour: 9))!
+        let message = UsageService.staleMessage(since: last, now: now, calendar: calendar)
+        #expect(message.hasPrefix("Stale since "))
+        #expect(message.hasSuffix(" — open any `claude` session to refresh"))
+        #expect(!message.contains("Fri"))
+    }
+
+    @Test func earlierDayIncludesWeekday() {
+        let last = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 17, minute: 12))!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 25, hour: 8))!
+        #expect(UsageService.staleMessage(since: last, now: now, calendar: calendar).contains("Thu"))
+    }
+}
