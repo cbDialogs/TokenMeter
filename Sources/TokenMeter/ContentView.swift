@@ -39,7 +39,10 @@ struct ContentView: View {
 
     @ViewBuilder private var statusLine: some View {
         Group {
-            if let error = usage.errorMessage {
+            if usage.isRefreshingLogin {
+                Label("Renewing Claude Code login…", systemImage: "arrow.clockwise")
+                    .foregroundStyle(.secondary)
+            } else if let error = usage.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             } else {

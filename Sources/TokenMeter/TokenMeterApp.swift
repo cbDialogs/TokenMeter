@@ -23,6 +23,13 @@ struct TokenMeterApp: App {
                     .keyboardShortcut("r")
             }
         }
+
+        Settings {
+            SettingsView()
+                .environment(usage)
+        }
+        // Same level as the meter, or it would open behind it.
+        .windowLevel(.floating)
     }
 }
 

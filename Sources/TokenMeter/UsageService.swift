@@ -6,7 +6,8 @@ import OSLog
 ///
 /// The token is never refreshed here: refreshing would rotate Claude Code's
 /// refresh token. When it expires, running `claude` refreshes it and the next
-/// poll picks up the new one.
+/// poll picks up the new one. With "Keep login fresh" on, TokenMeter runs
+/// that `claude` itself (see `LoginRefresher`).
 @MainActor
 @Observable
 final class UsageService {
@@ -14,6 +15,10 @@ final class UsageService {
     static let pollInterval: TimeInterval = 120
     /// Longest pause after a 429, whatever Retry-After says.
     static let maxBackoff: TimeInterval = 30 * 60
+    /// UserDefaults key for the "Keep login fresh" setting. Off by default.
+    nonisolated static let keepLoginFreshKey = "keepLoginFresh"
+    /// Minimum gap between `claude -p` runs, so a broken install can't loop.
+    static let loginRefreshCooldown: TimeInterval = 10 * 60
     nonisolated static let log = Logger(subsystem: "com.dialogs.TokenMeter", category: "usage")
 
     private(set) var modelPercent: Double?
@@ -24,10 +29,15 @@ final class UsageService {
     private(set) var lastUpdated: Date?
     private(set) var errorMessage: String?
     private(set) var isLoading = false
+    /// True while `claude -p` is running to renew the login.
+    private(set) var isRefreshingLogin = false
 
     private var timer: Timer?
     /// Set from a 429's Retry-After; timer polls are skipped until then.
     private var backoffUntil: Date?
+    private var lastLoginRefreshAttempt: Date?
+
+    var keepLoginFresh: Bool { UserDefaults.standard.bool(forKey: Self.keepLoginFreshKey) }
 
     func start() {
         guard timer == nil else { return }
@@ -47,11 +57,15 @@ final class UsageService {
         Task {
             defer { isLoading = false }
             do {
-                apply(try await Self.fetchUsage())
+                apply(try await fetchUsageRenewingLogin())
                 errorMessage = nil
                 backoffUntil = nil
             } catch UsageError.tokenExpired {
                 errorMessage = Self.staleMessage(since: lastUpdated)
+            } catch let failure as LoginRefresher.Failure {
+                let reason = failure.errorDescription ?? "unknown error"
+                Self.appendLog("Login refresh failed: \(reason)")
+                errorMessage = "Auto-refresh failed: \(reason) — open any `claude` session"
             } catch UsageError.rateLimited(let until) {
                 let limit = Date().addingTimeInterval(Self.maxBackoff)
                 backoffUntil = min(until ?? Date().addingTimeInterval(Self.pollInterval), limit)
@@ -60,6 +74,39 @@ final class UsageService {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+
+    /// Fetches usage, first renewing the login through `claude` when the
+    /// setting is on and the token is expiring or rejected.
+    private func fetchUsageRenewingLogin() async throws -> UsageResponse {
+        var credentials = try await Self.loadCredentials()
+        if loginRefreshAllowed, LoginRefresher.isDue(expiresAt: credentials.expiresAt) {
+            credentials = try await renewLogin()
+        }
+        do {
+            return try await Self.fetchUsage(credentials)
+        } catch UsageError.tokenExpired where loginRefreshAllowed {
+            return try await Self.fetchUsage(try await renewLogin())
+        }
+    }
+
+    private var loginRefreshAllowed: Bool {
+        guard keepLoginFresh else { return false }
+        guard let last = lastLoginRefreshAttempt else { return true }
+        return Date().timeIntervalSince(last) >= Self.loginRefreshCooldown
+    }
+
+    private func renewLogin() async throws -> Credentials {
+        lastLoginRefreshAttempt = Date()
+        isRefreshingLogin = true
+        defer { isRefreshingLogin = false }
+        try await LoginRefresher.run()
+        let credentials = try await Self.loadCredentials()
+        guard let expiresAt = credentials.expiresAt, expiresAt > Date() else {
+            throw LoginRefresher.Failure.notRenewed
+        }
+        Self.log.info("Login renewed until \(expiresAt.formatted(), privacy: .public)")
+        return credentials
     }
 
     /// Message shown when Claude Code's login has expired.
@@ -103,8 +150,11 @@ final class UsageService {
         }
     }
 
-    nonisolated static func fetchUsage() async throws -> UsageResponse {
-        let credentials = try await Task.detached { try readCredentials() }.value
+    nonisolated static func loadCredentials() async throws -> Credentials {
+        try await Task.detached { try readCredentials() }.value
+    }
+
+    nonisolated static func fetchUsage(_ credentials: Credentials) async throws -> UsageResponse {
         if let expiresAt = credentials.expiresAt, expiresAt < Date() {
             throw UsageError.tokenExpired
         }
@@ -138,7 +188,11 @@ final class UsageService {
             .sorted().joined(separator: " ")
         let body = String(decoding: data.prefix(300), as: UTF8.self)
             .replacingOccurrences(of: "\n", with: " ")
-        let line = "HTTP \(status) \(headers) body=\(body)"
+        appendLog("HTTP \(status) \(headers) body=\(body)")
+    }
+
+    /// Appends one line to the unified log and ~/Library/Logs/TokenMeter.log.
+    nonisolated static func appendLog(_ line: String) {
         log.error("\(line, privacy: .public)")
 
         let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/TokenMeter.log")
@@ -162,7 +216,7 @@ final class UsageService {
         return formatter.date(from: value)
     }
 
-    struct Credentials {
+    struct Credentials: Sendable {
         var accessToken: String
         var expiresAt: Date?
     }

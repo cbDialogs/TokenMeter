@@ -38,6 +38,18 @@ TokenMeter reuses the login that Claude Code already stores:
 
 The token is only sent to `api.anthropic.com`. TokenMeter **never refreshes the token itself**, because that would rotate Claude Code's refresh token and could break Claude Code's login. Claude Code's login lasts about 8 hours without use. When it expires, the needles dim and the window says *"Stale since 5:12 PM — open any `claude` session to refresh"*. Start Claude Code and the meter recovers on its next poll.
 
+### Keeping the login fresh (optional)
+
+**TokenMeter → Settings… (⌘,) → Keep Claude Code login fresh.** Off by default.
+
+When it's on, TokenMeter runs a tiny prompt shortly before the token expires (or right after a 401), so Claude Code renews its own login and the meter never goes stale:
+
+```sh
+claude -p --no-session-persistence --tools "" --model haiku "Reply with the single word OK."
+```
+
+It runs in a temporary directory, at most once every 10 minutes, and is killed after 90 seconds. Each run costs a small amount of Haiku usage. `claude` is looked up in `~/.local/bin`, `~/.claude/local`, `~/.npm-global/bin`, Homebrew and `/usr/local/bin`, then via your login shell. If the run fails, the status line says why and the failure is recorded in `~/Library/Logs/TokenMeter.log`.
+
 If Anthropic rate-limits the endpoint, TokenMeter waits as long as the server asks (up to 30 minutes) before trying again. Failed requests are recorded in `~/Library/Logs/TokenMeter.log`, without the token.
 
 > Long-lived tokens from `claude setup-token` don't work here: they lack the `user:profile` scope the usage endpoint requires.
@@ -75,10 +87,12 @@ swift scripts/make-icon.swift   # regenerate Resources/AppIcon.icns
 
 ```
 Sources/TokenMeter/
-  TokenMeterApp.swift    floating window, ⌘R command
+  TokenMeterApp.swift    floating window, ⌘R command, Settings scene
   ContentView.swift      gauge and status line
   GaugeView.swift        Canvas-drawn speedometer
+  SettingsView.swift     Settings window (keep-login-fresh toggle)
   UsageService.swift     Keychain read, polling, error state
+  LoginRefresher.swift   optional `claude -p` run that renews the login
   UsageModels.swift      lenient decoding of the usage response
   PaceCalculator.swift   work-hours pace math
 Tests/TokenMeterTests/   pace and decoding tests
